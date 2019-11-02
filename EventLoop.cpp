@@ -4,7 +4,7 @@
 #include "EventLoop.h"
 #include "Channel.h"
 #include "Kqueue.h"
-//#include "SocketOpt.h"
+#include "SocketOpt.h"
 #include "MutexLock.h"
 class IgnoreSignal{
 public:
@@ -39,7 +39,6 @@ EventLoop ::EventLoop() :
     //将可读事件作为唤醒事件
     //wakeupFd = SocketOpt::socketpair();
     SocketOpt::socketpair(wakeupFd);
-    std::cout << "^^^@@@: " << wakeupFd[0] <<" " << wakeupFd[1] << "\n";
     wakeupChannel_ = std::shared_ptr<Channel>(new Channel(this,wakeupFd[0]));
     wakeupChannel_->setReadCallback(std::bind(&EventLoop::handleread,this));
     wakeupChannel_->enableReading();
@@ -57,7 +56,6 @@ void EventLoop::quit() {
 }
 
 void EventLoop::updateChannel(Channel* channel) {
-    std::cout << "zevent loop update\n";
     assert(channel->ownerloop()==this);
     Kqueue_ -> updateChannel(channel);
 }
@@ -69,13 +67,10 @@ void EventLoop::loop() {
     while(!quit_){
         activeChannel_.clear();
         Kqueue_->kqueue(-1,&activeChannel_);
-        std::cout << "Kqueue Loop!\n";
-        //quit_ = true;
         auto ends = activeChannel_.end();
         for(auto it=activeChannel_.begin(); it != ends; it++){
             (*it) -> handleEvent();
         }
-        std::cout<<"doing\n";
         doPendingFunctors();
     }
 
@@ -97,18 +92,13 @@ void EventLoop::runInLoop(const Functor &cb) {
 void EventLoop::doPendingFunctors() {
     //避免阻塞，提高效率
     std::vector<Functor> functors;
-    //因为调用queueInloop的时候，如果是在functors里调用的话，需要唤醒IO线程，防止阻塞在kqueue上
     callingPendingFunctors_ = true;
     {
         MutexGround locks(mutex_);
         functors.swap(pendingFunctors_);
     }
-   // std::cout << "((((((((((((队列长度: " << functors.size() << std::endl;
     for (size_t i = 0; i < functors.size(); ++i)
     {
-        std::thread::id thread;
-        thread = std::this_thread::get_id();
-        //std::cout << "((((((((((((队列由哪个IO线程执行: " << thread << std::endl;
         functors[i]();
     }
     callingPendingFunctors_ = false;
@@ -123,7 +113,6 @@ void EventLoop::wakeup() {
 }
 
 void EventLoop::handleread() {
-    std::cout << "Handleread  %%%%%%%%%%\n";
     uint64_t one;
     size_t n = ::read(wakeupFd[0], &one, sizeof(one));
     if(n != sizeof(one)){
